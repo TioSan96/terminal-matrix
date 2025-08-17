@@ -1,0 +1,42 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Chat messages at root collection `messages`
+    match /messages/{messageId} {
+      // Public read (adjust to request.auth != null if needed)
+      allow read: if true;
+
+      // Allow create for authenticated users with validated fields
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['username','text','createdAt','createdAtMs'])
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 1000
+        && request.resource.data.username is string
+        && request.resource.data.username.size() > 0
+        && request.resource.data.username.size() <= 32
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.createdAtMs is int;
+
+      // No client updates/deletes
+      allow update, delete: if false;
+    }
+
+    match /rooms/{roomId}/messages/{messageId} {
+      // Leitura pública (você pode trocar para 'request.auth != null' depois)
+      allow read: if true;
+
+      // Criar mensagem: exige usuário autenticado (anônimo conta), valida campos
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['text','uid','createdAt'])
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 1000
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.createdAt == request.time;
+
+      // Bloqueia updates/deletes pelo cliente
+      allow update, delete: if false;
+    }
+  }
+}

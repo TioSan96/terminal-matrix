@@ -1,0 +1,100 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Matrix Chat - Teste Firebase</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, sans-serif; margin: 2rem; }
+      #msgs { border: 1px solid #ccc; padding: 1rem; max-width: 700px; height: 360px; overflow: auto; border-radius: 8px; background: #fafafa; }
+      form { margin-top: 1rem; display: flex; gap: .5rem; max-width: 700px; }
+      input { flex: 1; padding: .65rem .75rem; border-radius: 6px; border: 1px solid #ccc; }
+      button { padding: .65rem .9rem; border-radius: 6px; border: 1px solid #2a61ff; background: #2a61ff; color: white; cursor: pointer; }
+      .meta { color: #555; font-size: .85rem; margin-bottom: .5rem; }
+      .item { padding: .25rem 0; }
+      .item strong { color: #333; }
+    </style>
+  </head>
+  <body>
+    <h1>Teste Firebase (Firestore)</h1>
+    <p class="meta">Sala única: <code>rooms/global/messages</code>. Abra em outra aba ou dispositivo para ver mensagens em tempo real.</p>
+
+    <div id="msgs" aria-live="polite" aria-busy="false"></div>
+
+    <form id="form">
+      <input id="text" placeholder="Digite uma mensagem" autocomplete="off" />
+      <button type="submit">Enviar</button>
+    </form>
+
+    <script type="module">
+      // Import via CDN (SDK modular)
+      import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+      import { getFirestore, collection, addDoc, serverTimestamp, query, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+      import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+
+      // Configuração do seu projeto (pública no front — segurança vem das regras)
+      const firebaseConfig = {
+        apiKey: "AIzaSyBKiMb4MAFKrIMKRjHPMcISVpAgD-tq0cc",
+        authDomain: "matrix-chat96.firebaseapp.com",
+        projectId: "matrix-chat96",
+        storageBucket: "matrix-chat96.firebasestorage.app",
+        messagingSenderId: "679279868260",
+        appId: "1:679279868260:web:29fd03aeb80f85c45da271",
+        measurementId: "G-18GWEM92ZR"
+      };
+
+      const app = initializeApp(firebaseConfig);
+      const db = getFirestore(app);
+      const auth = getAuth(app);
+
+      // Login anônimo para identificar usuário
+      signInAnonymously(auth).catch(console.error);
+
+      const msgsEl = document.getElementById("msgs");
+      const form = document.getElementById("form");
+      const input = document.getElementById("text");
+
+      function renderMessage(m) {
+        const div = document.createElement("div");
+        div.className = "item";
+        const ts = m.createdAt?.toDate?.() || m.createdAt;
+        const time = ts instanceof Date ? ts.toLocaleTimeString() : "—";
+        const nick = m.uid ? m.uid.slice(0, 6) : "anon";
+        div.innerHTML = `<strong>[${time}] ${nick}</strong>: ${m.text}`;
+        return div;
+      }
+
+      // Listener em tempo real (sala única: "global")
+      const q = query(collection(db, "rooms/global/messages"), orderBy("createdAt", "asc"));
+      onSnapshot(q, (snap) => {
+        msgsEl.setAttribute("aria-busy", "true");
+        msgsEl.innerHTML = "";
+        snap.forEach((doc) => {
+          const m = doc.data();
+          msgsEl.appendChild(renderMessage(m));
+        });
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+        msgsEl.setAttribute("aria-busy", "false");
+      });
+
+      // Enviar mensagem
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const user = auth.currentUser;
+        const text = input.value.trim();
+        if (!text) return;
+        try {
+          await addDoc(collection(db, "rooms/global/messages"), {
+            text,
+            uid: user?.uid || null,
+            createdAt: serverTimestamp(),
+          });
+          input.value = "";
+          input.focus();
+        } catch (err) {
+          alert("Erro ao enviar mensagem: " + (err?.message || err));
+        }
+      });
+    </script>
+  </body>
+</html>
