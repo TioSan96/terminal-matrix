@@ -1,0 +1,16 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default: deny everything
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Chat messages: only authenticated users can read or create
+    match /messages/{doc} {
+      allow read, create: if request.auth != null;
+      // Do not allow client-side updates or deletes
+      allow update, delete: if false;
+    }
+  }
+}
