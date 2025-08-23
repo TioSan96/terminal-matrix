@@ -1,0 +1,44 @@
+# Node / Next artifacts
+node_modules/
+**/node_modules/
+.next/
+**/.next/
+dist/
+**/dist/
+out/
+
+# Env files (do not commit secrets)
+.env
+.env.*
+**/.env
+**/.env.*
+matrix-frontend/web/.env.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Firebase CLI local cache
+.firebase/
+.firebaserc.local
+
+# Build caches
+.cache/
+
+# Service Account keys (never commit)
+*sa-*.json
+*service-account*.json
+*firebase-adminsdk-*.json
+
+# Misc
+coverage/
+*.swp
+*.swo

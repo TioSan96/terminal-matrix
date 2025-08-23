@@ -10,6 +10,13 @@ Interface de terminal em Next.js (App Router) com integração Firebase (Auth + 
 - Organização de código por responsabilidades (components, services, hooks, utils, types)
 - Padronização com ESLint + Prettier
 
+### Novidades em v1.1
+- Gateway WebSocket (WSS) ajustado para ler `ORIGIN_ALLOW` do ambiente e liberar `http://localhost:3000` em dev
+- Validação de token do Firebase com logs de erro detalhados para facilitar troubleshooting
+- Inicialização do Firebase Admin com `projectId` vindo das variáveis de ambiente
+- Documentação do deploy do gateway via systemd e de testes com `wscat`
+- Removido os slash commands no terminal
+
 ## Estrutura do projeto
 ```
 /
@@ -44,6 +51,9 @@ Crie `matrix-frontend/web/.env.local` com:
 NEXT_PUBLIC_FIREBASE_API_KEY=...
 NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=...
 NEXT_PUBLIC_FIREBASE_PROJECT_ID=...
+NEXT_PUBLIC_PTY_WSS_URL=wss://<seu-dominio-ou-ip>/ws
+NEXT_PUBLIC_PTY_TOKEN_TRANSPORT=query
+NEXT_PUBLIC_PTY_TOKEN_QUERY_KEY=token
 ```
 
 ## Scripts (na pasta `matrix-frontend/web`)
@@ -60,6 +70,8 @@ cd matrix-frontend/web
 npm install
 npm run dev
 ```
+
+Abra http://localhost:3000/terminal e, após autenticar, digite `shell` para abrir o terminal remoto.
 
 ## Deploy
 Há duas rotas principais de deploy: Vercel (recomendado para Next) ou Firebase Hosting com Web Frameworks.
@@ -78,6 +90,64 @@ Há duas rotas principais de deploy: Vercel (recomendado para Next) ou Firebase 
 5. `firebase deploy --only hosting`
 
 Obs.: `firestore.rules` já está referenciado em `firebase.json`.
+
+## Gateway WebSocket (WSS)
+O gateway valida o ID Token do Firebase e inicia uma sessão de PTY ao conectar no caminho `/ws`.
+
+### Arquivo do gateway
+- O gateway roda fora deste repositório (por exemplo, em `/opt/terminalboot-gw/server.js`).
+- Recomenda-se versioná-lo em um repositório/dir próprio de infra, mantendo este repo como o frontend.
+
+### Variáveis de ambiente (systemd)
+Defina as variáveis no serviço para garantir consistência com o projeto Firebase (ex.: `nome-do-seu-projeto`):
+
+```
+[Service]
+Environment="FIREBASE_PROJECT_ID"
+Environment="GOOGLE_CLOUD_PROJECT"
+Environment="GCLOUD_PROJECT"
+Environment="ORIGIN_ALLOW=https://nome-do-seu-projeto.web.app,http://localhost:3000"
+# Produção (opcional, recomendado se checar revogação de token):
+# Environment="GOOGLE_APPLICATION_CREDENTIALS=/opt/terminalboot-gw/sa-nevoa-96.json"
+```
+
+Após editar: `sudo systemctl daemon-reload && sudo systemctl restart terminalboot-gw`.
+
+### Inicialização do Firebase Admin
+O gateway inicializa o Admin SDK com `projectId` via env. Para checar revogação de token (`verifyIdToken(token, true)`), use uma Service Account via `GOOGLE_APPLICATION_CREDENTIALS` e `admin.credential.applicationDefault()`.
+
+### Teste com wscat
+Use um token ID válido e inclua o header `Origin`:
+
+```bash
+TOKEN="<JWT do DevTools>"
+wscat -H 'Origin: http://localhost:3000' -c "ws://127.0.0.1:8081/ws?token=${TOKEN}"
+```
+
+### Proxy (Caddy) – exemplo
+```
+@ws {
+  path /ws
+}
+
+handle @ws {
+  reverse_proxy 127.0.0.1:8081 {
+    header_up Host {host}
+    header_up X-Forwarded-For {remote}
+  }
+}
+```
+
+## Changelog
+
+### v1.1
+- Ajuste de `ORIGIN_ALLOW` via env, incluindo `http://localhost:3000` para desenvolvimento
+- Logs de autenticação detalhados no gateway (erros de token e origem)
+- Inicialização do Firebase Admin com `projectId` do ambiente
+- Documentação de systemd, Service Account e testes com `wscat`
+
+### v1.0
+- Primeira versão com Next.js (App Router), xterm.js e integração Firebase (Auth/Firestore)
 
 ## Licença
 MIT

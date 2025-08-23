@@ -19,6 +19,7 @@ import {
   resendEmailVerification,
   reloadCurrentUser,
 } from '@/services/firebase';
+import { connectPty } from '@/services/ptyClient';
 
 // Theme global Matrix/CRT (sincronizado com globals.css)
 // Inclui mapeamento ANSI para evitar verde mais escuro quando usamos \u001b[32m.
@@ -82,6 +83,8 @@ export default function TerminalConsole({ startupMode = 'normal' }: { startupMod
   const [ready, setReady] = useState(false);
   const [currentUser, setCurrentUser] = useState<{ username: string } | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  // conexão PTY ativa (quando usuário roda "shell" no /terminal autenticado)
+  const ptyConnRef = useRef<null | { dispose: () => void }>(null);
   const chatUnsubRef = useRef<null | (() => void)>(null);
   // shell autenticado pré-chat (em /terminal antes de entrar no chat)
   const authShellRef = useRef<boolean>(false);
@@ -229,7 +232,7 @@ export default function TerminalConsole({ startupMode = 'normal' }: { startupMod
     enterGuestMode(false, false);
     // sequência de entrada no chat escrita lentamente (linhas 3 e 4)
     writeln('returning to the terminal...');
-    writeln('commands: /help');
+    // no modo terminal-like não mostramos dicas de comandos com barra
     // agora sim, inicia o modo chat com prompt
     suppressLoginUIRef.current = false;
     enterChatMode(false);
@@ -245,7 +248,7 @@ export default function TerminalConsole({ startupMode = 'normal' }: { startupMod
     writeln('System Failure...');
     writeln('Error checking login status.');
     writeln('returning to the terminal...');
-    writeln('commands: /help');
+    // sem dicas de slash commands no terminal-like
     enterAuthShell();
   }
 
@@ -258,7 +261,7 @@ export default function TerminalConsole({ startupMode = 'normal' }: { startupMod
     writeln('');
     writeln('Connected to the system...');
     writeln('login status ok.');
-    writeln('commands: /help');
+    // sem banner de comandos
   }
 
   function enterAuthShell() {
@@ -270,8 +273,10 @@ export default function TerminalConsole({ startupMode = 'normal' }: { startupMod
     const silentBanner = pathname === '/terminal' && startupMode === 'noIntro';
     if (!silentBanner) {
       writeln('');
-      writeln('authenticated shell (pre-chat)');
-      writeln('type /help for available commands. type /chat to enter the chat.');
+      writeln('authenticated shell');
+      if (pathname === '/terminal') {
+        writeln('type "shell" to start a real session.');
+      }
       writeln('');
     }
     authShellInputLoop();
@@ -283,74 +288,85 @@ export default function TerminalConsole({ startupMode = 'normal' }: { startupMod
     inputPrompt(promptPrefix(), async (line) => {
       const text = line.trim();
       if (!text) return authShellInputLoop();
-      if (!text.startsWith('/')) {
-        writeln(`bash: ${text}: command not found`);
+      // Terminal-like: sem barra. Comandos suportados: shell (no /terminal), clear, ping, username, logout, chat
+      if (pathname === '/terminal' && text === 'shell') {
+        // iniciar PTY real
+        if (!termRef.current) return;
+        // encerra qualquer listener de prompt ativo
+        try { keyListenerRef.current?.dispose?.(); } catch {}
+        keyListenerRef.current = null;
+        promptLockRef.current = true;
+        writeln('[connecting shell...]');
+        try {
+          const conn = await connectPty({
+            term: termRef.current,
+            onClose: (reason?: string) => {
+              try { writeln(`\r\n[shell closed] ${reason || ''}`); } catch {}
+              ptyConnRef.current = null;
+              promptLockRef.current = false;
+              authShellInputLoop();
+            },
+          });
+          ptyConnRef.current = conn;
+          // agora o controle de I/O fica com o PTY até fechar
+          return;
+        } catch (e: any) {
+          writeln(`[shell error] ${e?.message || e}`);
+          promptLockRef.current = false;
+          return authShellInputLoop();
+        }
+      }
+      if (text === 'clear') {
+        hardClear();
         return authShellInputLoop();
       }
-      const [cmd, ...rest] = text.slice(1).split(' ');
-      switch (cmd) {
-        case 'help':
-          writeln('authenticated shell commands:');
-          writeln('/help   - list available commands');
-          writeln('/ping   - measure latency (RTT)');
-          writeln('/chat   - enter chat mode');
-          writeln('/username <new> - change your username');
-          writeln('/logout - sign out and return to home');
-          writeln('/clear  - clear screen');
-          return authShellInputLoop();
-        case 'ping': {
-          const rtt = await measurePing();
-          writeln(`pong: ${rtt} ms`);
-          return authShellInputLoop();
-        }
-        case 'username': {
-          const candidate = (rest.join(' ') || '').trim();
-          if (!candidate) {
-            promptLockRef.current = false;
-            await enforceUsernameSetup();
-            return authShellInputLoop();
-          }
-          if (!isValidUsername(candidate)) {
-            writeln('invalid username. allowed: a-z, 0-9, _ and - (3-20), not "guest".');
-            return authShellInputLoop();
-          }
-          try {
-            const u = getAuth().currentUser;
-            if (!u) throw new Error('session expired');
-            await updateProfile(u, { displayName: candidate });
-            currentUserRef.current = { username: candidate };
-            setCurrentUser({ username: candidate });
-            const admin = isAdminUser(candidate);
-            isAdminRef.current = admin;
-            setIsAdmin(admin);
-            writeln(`username changed to ${candidate}${admin ? ' (admin)' : ''}`);
-          } catch (e: any) {
-            writeln(`username error: ${e?.message || e}`);
-          }
-          return authShellInputLoop();
-        }
-        case 'chat':
-          authShellRef.current = false;
-          writeln('opening chat page...');
-          router.push('/terminal/chat');
-          return;
-        // video command removed
-        case 'logout':
-          // pausa prompt e remove listeners antes do signOut
-          promptLockRef.current = true;
-          try {
-            keyListenerRef.current?.dispose?.();
-          } catch {}
-          logoutRequestedRef.current = true;
-          await signOutUser();
-          return; // onAuthChanged tratará
-        case 'clear':
-          hardClear();
-          return authShellInputLoop();
-        default:
-          writeln(`unknown command: /${cmd}`);
-          return authShellInputLoop();
+      if (text === 'ping') {
+        const rtt = await measurePing();
+        writeln(`pong: ${rtt} ms`);
+        return authShellInputLoop();
       }
+      if (text.startsWith('username ')) {
+        const candidate = text.slice('username '.length).trim();
+        if (!candidate) {
+          promptLockRef.current = false;
+          await enforceUsernameSetup();
+          return authShellInputLoop();
+        }
+        if (!isValidUsername(candidate)) {
+          writeln('invalid username. allowed: a-z, 0-9, _ and - (3-20), not "guest".');
+          return authShellInputLoop();
+        }
+        try {
+          const u = getAuth().currentUser;
+          if (!u) throw new Error('session expired');
+          await updateProfile(u, { displayName: candidate });
+          currentUserRef.current = { username: candidate };
+          setCurrentUser({ username: candidate });
+          const admin = isAdminUser(candidate);
+          isAdminRef.current = admin;
+          setIsAdmin(admin);
+          writeln(`username changed to ${candidate}${admin ? ' (admin)' : ''}`);
+        } catch (e: any) {
+          writeln(`username error: ${e?.message || e}`);
+        }
+        return authShellInputLoop();
+      }
+      if (text === 'logout') {
+        promptLockRef.current = true;
+        try { keyListenerRef.current?.dispose?.(); } catch {}
+        logoutRequestedRef.current = true;
+        await signOutUser();
+        return;
+      }
+      if (text === 'chat') {
+        authShellRef.current = false;
+        writeln('opening chat page...');
+        router.push('/terminal/chat');
+        return;
+      }
+      // fallback terminal-like
+      writeln(`bash: ${text}: command not found`);
+      return authShellInputLoop();
     });
   }
 
@@ -825,7 +841,7 @@ export default function TerminalConsole({ startupMode = 'normal' }: { startupMod
     if (showHeader) {
       writeln('');
       writeln('entering chat mode...');
-      writeln('type your message and press Enter. commands: /help');
+      writeln('type your message and press Enter.');
       writeln('');
     }
     if (guestModeRef.current) {
@@ -998,19 +1014,14 @@ export default function TerminalConsole({ startupMode = 'normal' }: { startupMod
     if (showHeader) {
       writeln('');
       writeln('guest session started');
-      writeln('type /help to see available commands');
+      writeln('type help for tips, or login to access more features');
       writeln('');
     }
     if (autoStart) enterChatMode(showHeader);
   }
 
   function showGuestHelp() {
-    writeln('available commands (guest):');
-    writeln('/register - create account (email only)');
-    writeln('/login    - open login');
-    writeln('/clear    - clear screen');
-    writeln('/ping     - measure latency (RTT)');
-    writeln('/help     - show this help');
+    writeln('no built-in commands. type "clear" or "ping". others will behave like a shell.');
   }
 
   function guestInputLoop() {
@@ -1020,65 +1031,24 @@ export default function TerminalConsole({ startupMode = 'normal' }: { startupMod
     inputPrompt(promptPrefix(), async (line) => {
       const text = line.trim();
       if (!text) return guestInputLoop();
-      if (text.startsWith('/')) {
-        const [cmd, ...rest] = text.slice(1).split(' ');
-        switch (cmd) {
-          case 'help':
-            showGuestHelp();
-            break;
-          case 'register': {
-            // Registro apenas por email
-            promptLockRef.current = true;
-            writeln('registration (email only).');
-            writeln('rules: password = min 6, at least 1 upper, 1 lower, 1 number, 1 special.');
-            inputPrompt('email: ', (emailIn) => {
-              const email = (emailIn || '').trim();
-              const emailOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
-              if (!emailOk) {
-                writeln('invalid email: please provide a valid address like user@example.com');
-                return returnToGuest();
-              }
-              inputPassword('password: ', async (pwd) => {
-                try {
-                  const pwdTrim = (pwd || '').trim();
-                  const pwdOk = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{6,}$/.test(
-                    pwdTrim,
-                  );
-                  if (!pwdOk) {
-                    writeln('invalid password: min 6, must include upper, lower, number, special');
-                    return returnToGuest();
-                  }
-                  const display = email.split('@')[0] || 'user';
-                  await authSignUp(email, pwdTrim, display);
-                  writeln('register successful. a verification email has been sent.');
-                  writeln('check your inbox, confirm your email, then use /login to continue.');
-                  returnToGuest();
-                } catch (e: any) {
-                  writeln(`register error: ${e?.message || e}`);
-                  returnToGuest();
-                }
-              });
-            });
-            break;
-          }
-          case 'clear':
-            hardClear();
-            break;
-          case 'ping': {
-            const rtt = await measurePing();
-            writeln(`pong: ${rtt} ms`);
-            break;
-          }
-          case 'login':
-            // mantém modo guest até autenticar com sucesso
-            showLogin();
-            return;
-          default:
-            writeln(`unknown command: /${cmd}`);
-        }
+      // Terminal-like: aceitar comandos sem barra
+      if (text === 'clear') {
+        hardClear();
         return guestInputLoop();
       }
-      // Guest non-command input: show shell-like error (do not erase user input)
+      if (text === 'ping') {
+        const rtt = await measurePing();
+        writeln(`pong: ${rtt} ms`);
+        return guestInputLoop();
+      }
+      if (text === 'login') {
+        showLogin();
+        return;
+      }
+      if (text === 'help') {
+        showGuestHelp();
+        return guestInputLoop();
+      }
       // inputPrompt already printed a newline on Enter
       writeln(`bash: ${text}: command not found`);
       return guestInputLoop();
