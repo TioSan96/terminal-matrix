@@ -1,36 +1,88 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Terminal Matrix (Web)
 
-## Getting Started
+Interface de terminal em Next.js (App Router) com integração Firebase (Auth + Firestore) e UI inspirada no tema Matrix/CRT.
 
-First, run the development server:
+## Principais recursos
+- Autenticação por e-mail/senha (Firebase Auth), com verificação de e-mail opcional
+- Chat em tempo real (Firestore) com histórico e assinatura de mensagens
+- Modo convidado (mensagens locais) e shell autenticado com comandos
+- Terminal baseado em xterm.js com ajuste automático de layout (addon fit)
+- Organização de código por responsabilidades (components, services, hooks, utils, types)
+- Padronização com ESLint + Prettier
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+### Novidades em v1.1
+- Adicionadas variáveis para o terminal remoto: `NEXT_PUBLIC_PTY_WSS_URL`, `NEXT_PUBLIC_PTY_TOKEN_TRANSPORT=query`, `NEXT_PUBLIC_PTY_TOKEN_QUERY_KEY=token`
+- Documentação de uso do Gateway WebSocket (WSS), teste com `wscat` e exemplo de proxy (Caddy)
+- Logs de autenticação no gateway para facilitar troubleshooting
+- Removido conteúdo padrão do template em inglês
+
+## Estrutura do projeto (recorte relevante)
+```
+web/
+├─ src/
+│  ├─ app/          # Rotas e handlers (App Router)
+│  ├─ components/   # Ex.: TerminalConsole
+│  ├─ services/
+│  ├─ hooks/
+│  ├─ utils/
+│  └─ types/
+├─ public/
+├─ package.json
+├─ tsconfig.json     # Aliases @/services/*, @/components/*
+├─ .eslintrc.json
+├─ .prettierrc
+└─ .prettierignore
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Requisitos
+- Node.js 18+
+- Conta Firebase (projeto com Auth e Firestore)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Variáveis de ambiente (Next.js)
+Crie `matrix-frontend/web/.env.local` com:
+```
+NEXT_PUBLIC_FIREBASE_API_KEY=...
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=...
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=...
+NEXT_PUBLIC_PTY_WSS_URL=wss://<seu-dominio-ou-ip>/ws
+NEXT_PUBLIC_PTY_TOKEN_TRANSPORT=query
+NEXT_PUBLIC_PTY_TOKEN_QUERY_KEY=token
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Scripts (na pasta `web`)
+- `npm run dev` — inicia o servidor de desenvolvimento (http://localhost:3000)
+- `npm run build` — build de produção
+- `npm start` — executa o build
+- `npm run lint` — roda o ESLint
+- `npm run lint:fix` — tenta corrigir automaticamente
+- `npm run format` — formata com Prettier
 
-## Learn More
+## Desenvolvimento local
+```bash
+cd matrix-frontend/web
+npm install
+npm run dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+Abra http://localhost:3000/terminal e, após autenticar, digite `shell` para abrir o terminal remoto.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Deploy
+Há duas rotas principais de deploy: Vercel (recomendado para Next) ou Firebase Hosting com Web Frameworks.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Opção A: Vercel
+1. Conecte o repositório na Vercel
+2. Defina a pasta do projeto: `matrix-frontend/web`
+3. Configure as variáveis `NEXT_PUBLIC_*`
+4. Deploy
 
-## Deploy on Vercel
+### Opção B: Firebase Hosting (Web Frameworks)
+1. Instale Firebase CLI (firebase-tools) atualizado
+2. Ative "Web Frameworks" durante o setup
+3. Aponte o hosting para `matrix-frontend/web`
+4. Configure as envs `NEXT_PUBLIC_*` no ambiente (ou `.env.local` em build)
+5. `firebase deploy --only hosting`
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Obs.: `firestore.rules` já está referenciado em `firebase.json`.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Licença
+MIT
