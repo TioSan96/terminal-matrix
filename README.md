@@ -103,12 +103,12 @@ Defina as variáveis no serviço para garantir consistência com o projeto Fireb
 
 ```
 [Service]
-Environment="FIREBASE_PROJECT_ID"
-Environment="GOOGLE_CLOUD_PROJECT"
-Environment="GCLOUD_PROJECT"
+Environment="FIREBASE_PROJECT_ID..."
+Environment="GOOGLE_CLOUD_PROJECT..."
+Environment="GCLOUD_PROJECT..."
 Environment="ORIGIN_ALLOW=https://nome-do-seu-projeto.web.app,http://localhost:3000"
 # Produção (opcional, recomendado se checar revogação de token):
-# Environment="GOOGLE_APPLICATION_CREDENTIALS=/opt/terminalboot-gw/sa-nevoa-96.json"
+# Environment="GOOGLE_APPLICATION_CREDENTIALS=..."
 ```
 
 Após editar: `sudo systemctl daemon-reload && sudo systemctl restart terminalboot-gw`.
