@@ -21,10 +21,8 @@ export default function TerminalPage() {
   }, [router]);
   // Terminal sem overlay/intro, com fundo sólido (sem chuva de números)
   return (
-    <div className="screen">
-      <div>
-        <TerminalConsole startupMode="noIntro" />
-      </div>
+    <div className="screen terminal-fixed">
+      <TerminalConsole startupMode="noIntro" />
     </div>
   );
 }
