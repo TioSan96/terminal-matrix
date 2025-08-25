@@ -86,6 +86,10 @@ export default function TerminalConsole({ startupMode = 'normal' }: { startupMod
   // conexão PTY ativa (quando usuário roda "shell" no /terminal autenticado)
   const ptyConnRef = useRef<null | { dispose: () => void }>(null);
   const chatUnsubRef = useRef<null | (() => void)>(null);
+  // áudio e animação ASCII
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const asciiTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const asciiPlayingRef = useRef<boolean>(false);
   // shell autenticado pré-chat (em /terminal antes de entrar no chat)
   const authShellRef = useRef<boolean>(false);
   // evita eco duplicado quando a assinatura é recriada
@@ -274,7 +278,7 @@ export default function TerminalConsole({ startupMode = 'normal' }: { startupMod
     if (!silentBanner) {
       writeln('');
       writeln('authenticated shell');
-      if (pathname === '/terminal') {
+      if (pathname === '/terminal' && isAdminRef.current) {
         writeln('type "shell" to start a real session.');
       }
       writeln('');
@@ -289,7 +293,34 @@ export default function TerminalConsole({ startupMode = 'normal' }: { startupMod
       const text = line.trim();
       if (!text) return authShellInputLoop();
       // Terminal-like: sem barra. Comandos suportados: shell (no /terminal), clear, ping, username, logout, chat
+      if (text.startsWith('music')) {
+        const parts = text.split(' ').filter(Boolean);
+        const urlArg = parts[1];
+        const url = urlArg || process.env.NEXT_PUBLIC_MUSIC_URL || '/music/wake-up-matrix.mp3';
+        await startMusicWithAscii(url);
+        return; // ficará aguardando Ctrl+C
+      }
+      if (text === 'help') {
+        writeln('available commands:');
+        writeln('help        - show this help');
+        writeln('clear       - clear screen');
+        writeln('ping        - measure latency (RTT)');
+        writeln('music       - play "Wake Up (The Matrix)" with ASCII visualizer (Ctrl+C to stop)');
+        writeln('username <new> - change your username');
+        writeln('logout      - sign out');
+        if (pathname === '/terminal') {
+          writeln('chat        - open chat page');
+          if (isAdminRef.current) {
+            writeln('shell       - start a real session (admin only)');
+          }
+        }
+        return authShellInputLoop();
+      }
       if (pathname === '/terminal' && text === 'shell') {
+        if (!isAdminRef.current) {
+          writeln('bash: shell: command not found');
+          return authShellInputLoop();
+        }
         // iniciar PTY real
         if (!termRef.current) return;
         // encerra qualquer listener de prompt ativo
@@ -679,6 +710,94 @@ export default function TerminalConsole({ startupMode = 'normal' }: { startupMod
     writeln(text);
   }
 
+  // -------- MUSIC + ASCII VISUALIZER --------
+  async function startMusicWithAscii(url: string) {
+    if (!termRef.current) return;
+    try {
+      // bloquear prompt
+      promptLockRef.current = true;
+      // preparar áudio
+      let audio = audioRef.current;
+      if (!audio) return writeln('audio element not ready');
+      // configurar fonte
+      audio.src = url;
+      audio.crossOrigin = 'anonymous';
+      await audio.play().catch((e: any) => {
+        writeln(`[audio] failed to play: ${e?.message || e}`);
+        throw e;
+      });
+
+      // WebAudio graph
+      const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
+      const ctx = new AudioCtx();
+      const src = ctx.createMediaElementSource(audio);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      src.connect(analyser);
+      analyser.connect(ctx.destination);
+
+      const buf = new Uint8Array(analyser.frequencyBinCount);
+      asciiPlayingRef.current = true;
+      writeln('music: press Ctrl+C to stop and return to home...');
+      // listener de Ctrl+C
+      try { keyListenerRef.current?.dispose?.(); } catch {}
+      const onData = termRef.current.onData((d: string) => {
+        if (d === '\x03') {
+          stopMusicWithAscii(true);
+        }
+      });
+      keyListenerRef.current = { dispose: () => { try { onData.dispose(); } catch {} } } as any;
+
+      // Barra única baseada na média do espectro
+      if (asciiTimerRef.current) clearInterval(asciiTimerRef.current);
+      asciiTimerRef.current = setInterval(() => {
+        if (!asciiPlayingRef.current || !termRef.current) return;
+        analyser.getByteFrequencyData(buf);
+        let sum = 0;
+        for (let i = 0; i < buf.length; i += 1) sum += buf[i];
+        const avg = sum / buf.length; // 0..255
+        const cols = Math.max(10, Math.min(120, Math.floor((avg / 255) * 120)));
+        const bar = '#'.repeat(cols);
+        write('\r');
+        write('\x1b[2K'); // clear line
+        write(bar);
+      }, 80);
+    } catch (e: any) {
+      writeln(`[music] error: ${e?.message || e}`);
+      promptLockRef.current = false;
+    }
+  }
+
+  function stopMusicWithAscii(navigateHome = false) {
+    try {
+      asciiPlayingRef.current = false;
+      if (asciiTimerRef.current) {
+        clearInterval(asciiTimerRef.current);
+        asciiTimerRef.current = null;
+      }
+      try { keyListenerRef.current?.dispose?.(); } catch {}
+      keyListenerRef.current = null;
+      const a = audioRef.current;
+      if (a) {
+        try { a.pause(); } catch {}
+        try { a.currentTime = 0; } catch {}
+      }
+      // Linha simples: apenas quebra de linha antes da mensagem
+      writeln('\n[music stopped]');
+    } finally {
+      promptLockRef.current = false;
+      if (navigateHome) {
+        try { router.push('/'); } catch {}
+        // fallback: rearmar prompt caso a navegação não ocorra
+        ensurePromptReady(400);
+        try { setTimeout(() => { termRef.current?.focus(); }, 20); } catch {}
+      } else {
+        ensurePromptReady(400);
+        try { setTimeout(() => { termRef.current?.focus(); }, 20); } catch {}
+      }
+    }
+  }
+
   // -------- INPUT HELPERS --------
   function inputPrompt(label: string, cb: (v: string) => void) {
     const term = termRef.current;
@@ -1021,7 +1140,11 @@ export default function TerminalConsole({ startupMode = 'normal' }: { startupMod
   }
 
   function showGuestHelp() {
-    writeln('no built-in commands. type "clear" or "ping". others will behave like a shell.');
+    writeln('no built-in commands. try:');
+    writeln('- clear  : clear screen');
+    writeln('- ping   : measure latency');
+    writeln('- music  : play "Wake Up (The Matrix)" with ASCII visualizer (Ctrl+C to stop)');
+    writeln('others will behave like a shell.');
   }
 
   function guestInputLoop() {
@@ -1044,6 +1167,13 @@ export default function TerminalConsole({ startupMode = 'normal' }: { startupMod
       if (text === 'login') {
         showLogin();
         return;
+      }
+      if (text.startsWith('music')) {
+        const parts = text.split(' ').filter(Boolean);
+        const urlArg = parts[1];
+        const url = urlArg || process.env.NEXT_PUBLIC_MUSIC_URL || '/music/wake-up-matrix.mp3';
+        await startMusicWithAscii(url);
+        return; // aguardando Ctrl+C
       }
       if (text === 'help') {
         showGuestHelp();
@@ -1071,6 +1201,8 @@ export default function TerminalConsole({ startupMode = 'normal' }: { startupMod
       />
       {/* Invisible reCAPTCHA host for Phone Auth */}
       <div id="recaptcha-container" style={{ display: 'none' }} />
+      {/* Hidden audio element for music playback */}
+      <audio ref={audioRef} style={{ display: 'none' }} preload="auto" />
       <style jsx global>{`
         /* Cursor bloco com glow e blink (1s) estilo Matrix: some completamente no off */
         @keyframes termCursorBlink {

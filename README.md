@@ -6,9 +6,19 @@ Interface de terminal em Next.js (App Router) com integração Firebase (Auth + 
 - Autenticação por e-mail/senha (Firebase Auth), com verificação de e-mail opcional
 - Chat em tempo real (Firestore) com histórico e assinatura de mensagens
 - Modo convidado (mensagens locais) e shell autenticado com comandos
+- Modo convidado (mensagens locais) e shell autenticado com comandos — acesso ao shell restrito a administradores (allowlist)
 - Terminal baseado em xterm.js com ajuste automático de layout (addon fit)
 - Organização de código por responsabilidades (components, services, hooks, utils, types)
 - Padronização com ESLint + Prettier
+
+### Novidades em v1.2
+- Layout do terminal ajustado para ocupar o viewport completo e fixo no canto inferior esquerdo (`/terminal`)
+- Correção e padronização do comando `help` no shell autenticado e no modo convidado
+- Novo comando `music` que toca "Wake Up (The Matrix)" com visualizador ASCII (Web Audio API)
+- Suporte a parar a reprodução com `Ctrl+C` e retorno para `/` (rearmando o prompt)
+- Arquivo de áudio incluído em `matrix-frontend/web/public/music/wake-up-matrix.mp3`
+- Mensagens de ajuda atualizadas para refletir o comando `music`
+- Restrição: o comando `shell` (sessão remota) agora é exclusivo para administradores (allowlist)
 
 ### Novidades em v1.1
 - Gateway WebSocket (WSS) ajustado para ler `ORIGIN_ALLOW` do ambiente e liberar `http://localhost:3000` em dev
@@ -139,6 +149,14 @@ handle @ws {
 ```
 
 ## Changelog
+
+### v1.2
+- Terminal de tela cheia fixo e responsivo no `/terminal`
+- `help` revisado (guest e shell autenticado)
+- Comando `music` com visualizador ASCII e parada via `Ctrl+C` (retorno para `/`)
+- Inclusão do MP3 local em `public/music/wake-up-matrix.mp3`
+- Ajustes de UX do prompt após encerrar a música
+- Restrição de acesso: `shell` disponível apenas para administradores (allowlist)
 
 ### v1.1
 - Ajuste de `ORIGIN_ALLOW` via env, incluindo `http://localhost:3000` para desenvolvimento

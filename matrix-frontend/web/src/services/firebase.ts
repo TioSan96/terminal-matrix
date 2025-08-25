@@ -171,8 +171,21 @@ const ADMIN_USERNAMES = (process.env.NEXT_PUBLIC_ADMIN_USERNAMES || '')
   .map((s) => s.trim())
   .filter(Boolean);
 
+const ADMIN_EMAILS = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || '')
+  .split(',')
+  .map((s) => s.trim().toLowerCase())
+  .filter(Boolean);
+
 export function isAdminUser(username: string) {
-  return ADMIN_USERNAMES.includes(username);
+  try {
+    // Admin por username explícito
+    if (ADMIN_USERNAMES.includes(username)) return true;
+    // Admin por e-mail do usuário autenticado
+    const u = getAuth().currentUser;
+    const email = (u?.email || '').toLowerCase();
+    if (email && ADMIN_EMAILS.includes(email)) return true;
+  } catch {}
+  return false;
 }
 
 // --- Chat (Firestore) ---

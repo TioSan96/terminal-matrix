@@ -42,6 +42,19 @@ body {
   text-shadow: 0 0 6px rgba(0, 255, 156, 0.6);
 }
 
+/* Variante fixa para o /terminal: ocupa 100vw/100vh ancorado no canto inferior esquerdo */
+.screen.terminal-fixed {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  max-width: 100vw;
+  max-height: 100vh;
+  overflow: hidden;
+  z-index: 10;
+}
+
 /* Keyframes iguais aos usados pela IntroOverlay */
 @keyframes glow {
   0% {
